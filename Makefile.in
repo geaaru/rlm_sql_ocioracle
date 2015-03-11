@@ -1,8 +1,0 @@
-include ../../../../../Make.inc
-
-TARGET         = @targetname@
-SRCS           = sql_ocioracle.c list.c row.c field.c
-RLM_SQL_CFLAGS = @sql_ocioracle_cflags@ $(INCLTDL)
-RLM_SQL_LIBS   = @sql_ocioracle_ldflags@
-
-include ../rules.mak

@@ -1,0 +1,16 @@
+TARGETNAME     := @targetname@
+
+ifneq "$(TARGETNAME)" ""
+    TARGET := $(TARGETNAME).a
+endif
+
+SOURCES        := $(TARGETNAME).c list.c row.c field.c
+
+SRC_CFLAGS     := @sql_ocioracle_cflags@
+SRC_CFLAGS     += -I${top_srcdir}/src/modules/rlm_sql
+
+# Comment this out if you're experiencing build errors
+SRC_CFLAGS     += -Wno-strict-prototypes
+TGT_LDLIBS     := @sql_ocioracle_ldflags@
+
+# vim: expandtab sw=4 ts=4
