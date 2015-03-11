@@ -29,13 +29,13 @@
 #define RLM_SQL_OCIORACLE_CURSOR_PROCEDURE_STR  ":Ret_Cursor"
 #define SQLERROR_MSG_BUFFER 512
 
-typedef struct rlm_sql_ocioracle_sock rlm_sql_ocioracle_sock;
+typedef struct rlm_sql_ocioracle_conn rlm_sql_ocioracle_conn_t;
 typedef struct rlm_sql_ocioracle_row rlm_sql_ocioracle_row;
 typedef struct rlm_sql_ocioracle_field rlm_sql_ocioracle_field;
 typedef struct rlm_sql_ocioracle_list rlm_sql_ocioracle_list;
 typedef struct rlm_sql_ocioracle_node rlm_sql_ocioracle_node;
 
-struct rlm_sql_ocioracle_sock {
+struct rlm_sql_ocioracle_conn {
     OCI_Connection  *conn;
     OCI_Statement   *queryHandle;
     OCI_Error       *errHandle;

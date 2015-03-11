@@ -28,7 +28,6 @@ struct rlm_sql_ocioracle_row {
     /// Contains position of the row
     int rowcount;
     rlm_sql_ocioracle_field **data;
-    void *closure;
 };
 
 // Prototypes

@@ -18,12 +18,13 @@
  License:  GPL 2.0
 */
 
+#include <freeradius-devel/radiusd.h>
+#include <freeradius-devel/rad_assert.h>
+
 #include <stdlib.h>
 #include <string.h>
 #include "sql_ocioracle.h"
 #include "sql_ocioracle_field.h"
-
-#include <freeradius-devel/radiusd.h>
 
 /**
  * @return NULL on error

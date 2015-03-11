@@ -18,12 +18,14 @@
  License:  GPL 2.0
 */
 
+#include <freeradius-devel/radiusd.h>
+#include <freeradius-devel/rad_assert.h>
+
 #include <stdlib.h>
 #include "sql_ocioracle.h"
 #include "sql_ocioracle_row.h"
 #include "sql_ocioracle_field.h"
 
-#include <freeradius-devel/radiusd.h>
 
 /**
  * @return NULL on error
@@ -122,7 +124,7 @@ rlm_sql_ocioracle_row_set_field (rlm_sql_ocioracle_row *r,
 inline rlm_sql_ocioracle_field *
 rlm_sql_ocioracle_row_get_field (rlm_sql_ocioracle_row *r, int pos)
 {
-    return (r && pos >= 0 && pos <= r->colnum ? r->data[pos] : NULL); 
+    return (r && pos >= 0 && pos <= r->colnum ? r->data[pos] : NULL);
 }
 
 /**

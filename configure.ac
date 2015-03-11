@@ -73,16 +73,14 @@ dnl ######################################################
 LDFLAGS_PRE="$LDFLAGS"
 OCILIB_PATH=""
 if test x$oracle_lib_dir != x ; then
-  OCILIB_PATH="-L$oracle_lib_dir"
+  OCILIB_PATH="$oracle_lib_dir"
 else
   if text x"$ORACLE_HOME" != "x" ; then
-    OCILIB_PATH="-L${ORACLE_HOME}/lib"
+    OCILIB_PATH="${ORACLE_HOME}/lib"
   fi
 fi
 
 for version in $oracle_version ; do
-
-  AC_MSG_CHECKING([for OCIInitialize in nnz${version}])
 
   LDFLAGS="-L${OCILIB_PATH} -lnnz${version} -L${OCILIB_PATH} -locci -L${OCILIB_PATH} -lclntsh"
 
@@ -96,16 +94,13 @@ for version in $oracle_version ; do
   fi
 done
 
-if test $ocilib_present -eq 1 ; then
-
-  AC_SUBST(OCILIB)
-
-else
+if test $ocilib_present -eq 0 ; then
 
   AC_MSG_ERROR([Oracle libraries not found. Use --with-oracle-lib-dir=<path> or set ORACLE_HOME.])
 
 fi
 LDFLAGS="$LDFLAGS_PRE"
+AC_SUBST(OCILIB)
 
 dnl ######################################################
 dnl # Check for libraries of Opensource OCIlib
@@ -126,10 +121,10 @@ AC_CHECK_LIB(ocilib, [ OCI_ConnectionCreate ],
              oocilib_present=0)
 
 if test $oocilib_present -eq 1 ; then
-    OOCILIB="$OOCILIB -locilib"
-    LDFLAGS="$LDFLAGS_PRE"
+  OOCILIB="${OOCILIB} -locilib"
+  LDFLAGS="$LDFLAGS_PRE"
 else
-    AC_MSG_ERROR([Opensource Ocilib library not found. Use --with-ocilib-lib-dir=<path>.])
+  AC_MSG_ERROR([Opensource Ocilib library not found. Use --with-ocilib-lib-dir=<path>.])
 fi
 AC_SUBST(OOCILIB)
 
