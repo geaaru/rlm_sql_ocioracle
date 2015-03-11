@@ -6,7 +6,7 @@ This module allow you to use PL/SQL function that return a cursor.
 How it works ?
 ---------------
 
-Where is there a PL/SQL function that return a cursor just use string ":Ret_Cursor".
+Where there is a PL/SQL function that return a cursor just use string ":Ret_Cursor".
 
 For example inside freeradius/sql/ocioracle/dialup.conf you can have a row like this:
 
