@@ -165,27 +165,27 @@ sql_release_statement(rlm_sql_ocioracle_conn_t *conn)
 
       if (conn->results) {
          r = (rlm_sql_ocioracle_row *)
-            rlm_sql_ocioracle_node_get_data(o_sock->curr_row);
+            rlm_sql_ocioracle_node_get_data(conn->curr_row);
          for (i = 0; r && i < rlm_sql_ocioracle_row_get_colnum(r); i++) {
 
-            if (o_sock->results[i]) {
-               free(o_sock->results[i]);
-               o_sock->results[i] = NULL;
+            if (conn->results[i]) {
+               free(conn->results[i]);
+               conn->results[i] = NULL;
             }
 
          } // end for i
 
-         free(o_sock->results);
-         o_sock->results = NULL;
+         free(conn->results);
+         conn->results = NULL;
       }
 
-      o_sock->curr_row = NULL;
-      o_sock->pos = -1;
-      o_sock->affected_rows = -1;
+      conn->curr_row = NULL;
+      conn->pos = -1;
+      conn->affected_rows = -1;
 
-      if (o_sock->rows) {
-         for (i = 0, n = rlm_sql_ocioracle_list_get_first(o_sock->rows);
-               i < rlm_sql_ocioracle_list_get_size(o_sock->rows) && n;
+      if (conn->rows) {
+         for (i = 0, n = rlm_sql_ocioracle_list_get_first(conn->rows);
+               i < rlm_sql_ocioracle_list_get_size(conn->rows) && n;
                i++, n = rlm_sql_ocioracle_node_get_next(n), r = NULL) {
 
             r = (rlm_sql_ocioracle_row *)
@@ -198,8 +198,8 @@ sql_release_statement(rlm_sql_ocioracle_conn_t *conn)
 
          } // end for i
 
-         rlm_sql_ocioracle_list_destroy(o_sock->rows);
-         o_sock->rows = NULL;
+         rlm_sql_ocioracle_list_destroy(conn->rows);
+         conn->rows = NULL;
       }
    }
 
@@ -332,12 +332,12 @@ static int
 sql_check_error(rlm_sql_handle_t *handle, rlm_sql_config_t *config)
 {
    int ans = -1;
-   rlm_sql_ocioracle_sock *o_sock = NULL;
+   rlm_sql_ocioracle_conn_t *conn = NULL;
 
-   o_sock = (rlm_sql_ocioracle_sock *) handle->conn;
+   conn = (rlm_sql_ocioracle_conn_t *) handle->conn;
 
-   if (o_sock &&
-       (o_sock->errCode == 3113 || o_sock->errCode == 3114)) {
+   if (conn &&
+       (conn->errCode == 3113 || conn->errCode == 3114)) {
       ERROR("rlm_sql_ocioracle: OCI_SERVER_NOT_CONNECTED");
       ans = RLM_SQL_RECONNECT;
    } else {
@@ -376,7 +376,7 @@ sql_query(rlm_sql_handle_t *handle, rlm_sql_config_t *config, char *querystr)
     if (!conn->conn || !OCI_Ping(conn->conn)) {
 
        // Try to reconnecto to database
-       if (sql_reconnect(sqlsocket, o_sock, config))
+       if (sql_reconnect(handle, conn, config))
           return RLM_SQL_RECONNECT;
     }
 
@@ -524,7 +524,7 @@ sql_select_query(rlm_sql_handle_t *handle, rlm_sql_config_t *config, char *query
       goto error;
    }
 
-   for (i = 0; OCI_FetchNext(o_sock->rs); i++, r = NULL) {
+   for (i = 0; OCI_FetchNext(conn->rs); i++, r = NULL) {
 
       // Create row object
       r = rlm_sql_ocioracle_row_create(colnum, i, conn->rows);
