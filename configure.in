@@ -1,0 +1,226 @@
+AC_INIT(sql_ocioracle.c)
+AC_REVISION($Revision: 1.10 $)
+AC_DEFUN(modname,[rlm_sql_ocioracle])
+
+AC_ARG_WITH(ocilib, [AC_HELP_STRING([--with-ocilib],
+                                    [path of the Oracle OCI libraries])],
+            [ ocilib="$withval" ], [ ocilib="" ])
+AC_ARG_WITH(ociinc, [AC_HELP_STRING([--with-ociinc],
+                                    [path of the Oracle OCI includes])],
+            [ ociinc="$withval" ], [ ociinc="" ])
+AC_ARG_WITH(ociliblib, [AC_HELP_STRING([--with-ociliblib],
+                                      [path of the opensource ocilib library])],
+            [ ociliblib="$withval" ], [ ocilibliblib="" ])
+AC_ARG_WITH(ocilibinc, [AC_HELP_STRING([--with-ocilibinc],
+                                      [path of the opensource ocilib library includes])],
+            [ ocilibinc="$withval" ], [ ocilibinc="" ])
+
+fail=
+sql_ocioracle_ldflags=
+sql_ocioracle_cflags=
+
+# Checks for programs.
+AC_PROG_CC
+
+
+AC_DEFUN([AC_CC_TRY_FLAG], [
+  AC_MSG_CHECKING([whether gcc understands $1])
+
+  # clean cflags
+  CFLAGS=""
+  ac_save_CFLAGS="$CFLAGS"
+  CFLAGS="$CFLAGS $1"
+  AC_COMPILE_IFELSE([ ], [ac_cc_flag=yes], [ac_cc_flag=no])
+  CFLAGS="$CFLAGS $ac_save_CFLAGS"
+
+  if test "x$ac_cc_flag" = "xyes"; then
+    ifelse([$2], , :, [$2])
+  else
+    ifelse([$3], , :, [$3])
+  fi
+  AC_MSG_RESULT([$ac_cc_flag])
+])
+
+if test "x$GCC" = "xyes"; then
+  AC_CC_TRY_FLAG([-Wfloat-equal],
+                 [ac_flag_float_equal=yes],
+                 [ac_flag_float_equal=no])
+
+  changequote(,)dnl
+  case " $CFLAGS " in
+  *[\ \	]-Wall[\ \	]*) ;;
+  *) CFLAGS="$CFLAGS -Wall" ;;
+  esac
+
+  case " $CFLAGS " in
+  *[\ \	]-Wchar-subscripts[\ \	]*) ;;
+  *) CFLAGS="$CFLAGS -Wchar-subscripts" ;;
+  esac
+
+  case " $CFLAGS " in
+  *[\ \	]-Wmissing-declarations[\ \	]*) ;;
+  *) CFLAGS="$CFLAGS -Wmissing-declarations" ;;
+  esac
+
+  case " $CFLAGS " in
+  *[\ \	]-Wmissing-prototypes[\ \	]*) ;;
+  *) CFLAGS="$CFLAGS -Wmissing-prototypes" ;;
+  esac
+
+  case " $CFLAGS " in
+  *[\ \	]-Wnested-externs[\ \	]*) ;;
+  *) CFLAGS="$CFLAGS -Wnested-externs" ;;
+  esac
+
+  case " $CFLAGS " in
+  *[\ \	]-Wpointer-arith[\ \ ]*) ;;
+  *) CFLAGS="$CFLAGS -Wpointer-arith" ;;
+  esac
+
+  case " $CFLAGS " in
+  *[\ \	]-Wcast-align[\ \	]*) ;;
+  *) CFLAGS="$CFLAGS -Wcast-align" ;;
+  esac
+
+  if test "x$ac_flag_float_equal" = "xyes"; then
+    case " $CFLAGS " in
+    *[\ \	]-Wfloat-equal[\ \ ]*) ;;
+    *) CFLAGS="$CFLAGS -Wfloat-equal" ;;
+    esac
+  fi
+
+  case " $CFLAGS " in
+  *[\ \	]-Wsign-compare[\ \	]*) ;;
+  *) CFLAGS="$CFLAGS -Wsign-compare" ;;
+  esac
+
+  if test "x$enable_ansi" = "xyes"; then
+    case " $CFLAGS " in
+    *[\ \	]-ansi[\ \ ]*) ;;
+    *) CFLAGS="$CFLAGS -ansi" ;;
+    esac
+
+    case " $CFLAGS " in
+    *[\ \	]-D_POSIX_C_SOURCE*) ;;
+    *) CFLAGS="$CFLAGS -D_POSIX_C_SOURCE=199309L" ;;
+    esac
+
+    case " $CFLAGS " in
+    *[\ \	]-D_BSD_SOURCE[\ \ ]*) ;;
+    *) CFLAGS="$CFLAGS -D_BSD_SOURCE" ;;
+    esac
+
+    case " $CFLAGS " in
+    *[\ \	]-pedantic[\ \ ]*) ;;
+    *) CFLAGS="$CFLAGS -pedantic" ;;
+    esac
+  fi
+  if test x$enable_gcov = xyes; then
+    case " $CFLAGS " in
+    *[\ \	]-fprofile-arcs[\ \	]*) ;;
+    *) CFLAGS="$CFLAGS -fprofile-arcs" ;;
+    esac
+    case " $CFLAGS " in
+    *[\ \	]-ftest-coverage[\ \ ]*) ;;
+    *) CFLAGS="$CFLAGS -ftest-coverage" ;;
+    esac
+
+  fi
+
+#    dnl enable share -fPIC flag
+#    CFLAGS="$CFLAGS -fPIC"
+  changequote([,])dnl
+fi
+
+# compress spaces in flags
+CFLAGS=`echo "$CFLAGS" | sed -e 's/ +/ /g'`
+
+CFLAGS="$CFLAGS -Wcomment -Wformat -Wnonnull -Wimplicit-int -Wimplicit \
+        -Wmain -Wmissing-braces -Wparentheses -Wsequence-point \
+        -Wreturn-type -Wswitch -Wtrigraphs -Wunused-function \
+        -Wunused-label -Wunused-value \
+        -Wchar-subscripts -Wmissing-declarations -Wmissing-prototypes \
+        -Wnested-externs -Wpointer-arith  \
+        -Wcast-align -Wall"
+
+
+# Check for ORACLE Library
+LDFLAGS_PRE="$LDFLAGS"
+if test x$ocilib != x ; then
+    OCILIB="-L$ocilib"
+    LDFLAGS="$LDFLAGS -L$ocilib -lclntsh -L$ocilib -lnnz11 -L$ocilib -locci"
+fi
+
+AC_CHECK_LIB(clntsh, [ OCIInitialize ], ocilib_present=1,
+             ocilib_present=0)
+ocilib_present=1
+
+if test $ocilib_present -eq 1 ; then
+    OCILIB="$OCILIB -lnnz11 -L$ocilib -locci -L$ocilib -lclntsh"
+    LDFLAGS="$LDFLAGS_PRE"
+else
+    AC_MSG_ERROR("No Oracle libraries founded!!!!")
+fi
+AC_SUBST(OCILIB)
+
+# Check for Opensource Ocilib library
+LDFLAGS_PRE="$LDFLAGS"
+if test x$ociliblib != x ; then
+    OOCILIB="-L$ociliblib"
+    LDFLAGS="$LDFLAGS -L$ociliblib $OCILIB"
+else
+    LDFLAGS="$LDFLAGS $OCILIB"
+fi
+
+AC_CHECK_LIB(ocilib, [ OCI_ConnectionCreate ], oocilib_present=1,
+             oocilib_present=0)
+
+if test $oocilib_present -eq 1 ; then
+    OOCILIB="$OOCILIB -locilib"
+    LDFLAGS="$LDFLAGS_PRE"
+else
+    AC_MSG_ERROR("No Opensource OCI Library founded!!!!")
+fi
+AC_SUBST(OOCILIB)
+
+
+# Check for Oracle includes
+CFLAGS_PRE="$CFLAGS"
+if test x$ociinc != x ; then
+  OCI_INCLUDES="-I$ociinc"
+  CFLAGS="$CFLAGS $OCI_INCLUDES"
+fi
+AC_CHECK_HEADERS([oci.h])
+CFLAGS="$CFLAGS_PRE"
+AC_SUBST(OCI_INCLUDES)
+
+# Check for Opensource OCIlib includes
+CFLAGS_PRE="$CFLAGS"
+if test x$ocilibinc != x ; then
+    OOCILIB_INCLUDES="-I$ocilibinc"
+    CFLAGS="$CFLAGS $OOCILIB_INCLUDES"
+fi
+AC_CHECK_HEADERS([ocilib.h])
+CFLAGS="$CFLAGS_PRE"
+AC_SUBST(OOCILIB_INCLUDES)
+
+sql_ocioracle_cflags="$OOCILIB_INCLUDES $OCI_INCLUDES"
+sql_ocioracle_ldflags="$OOCILIB $OCILIB"
+targetname=modname
+
+dnl Don't change this section.
+if test "x$fail" != x; then
+	if test "x${enable_strict_dependencies}" = xyes; then
+		AC_MSG_ERROR([set --without-]modname[ to disable it explicitly.])
+	else
+		AC_MSG_WARN([silently not building ]modname[.])
+		AC_MSG_WARN([FAILURE: ]modname[ requires:$fail.]);
+		targetname=
+	fi
+fi
+
+
+AC_SUBST(sql_ocioracle_ldflags)
+AC_SUBST(sql_ocioracle_cflags)
+AC_SUBST(targetname)
+AC_OUTPUT(Makefile)
