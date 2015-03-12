@@ -25,15 +25,15 @@
 // Opensource OCILib library
 #include <ocilib.h>
 
-#define MAX_DATASTR_LEN 64
+#define SQL_OCI_ERROR(msg, ...) ERROR("rlm_sql_ocioracle: " msg, ## __VA_ARGS__)
+#define SQL_OCI_DEBUG(msg, ...) DEBUG("rlm_sql_ocioracle: " msg, ## __VA_ARGS__)
+#define SQL_OCI_INFO(msg, ...)   INFO("rlm_sql_ocioracle: " msg, ## __VA_ARGS__)
+#define SQL_OCI_WARN(msg, ...)   WARN("rlm_sql_ocioracle: " msg, ## __VA_ARGS__)
+
 #define RLM_SQL_OCIORACLE_CURSOR_PROCEDURE_STR  ":Ret_Cursor"
-#define SQLERROR_MSG_BUFFER 512
+#define SQL_OCI_INITIAL_ROWS_SIZE 10
 
 typedef struct rlm_sql_ocioracle_conn rlm_sql_ocioracle_conn_t;
-typedef struct rlm_sql_ocioracle_row rlm_sql_ocioracle_row;
-typedef struct rlm_sql_ocioracle_field rlm_sql_ocioracle_field;
-typedef struct rlm_sql_ocioracle_list rlm_sql_ocioracle_list;
-typedef struct rlm_sql_ocioracle_node rlm_sql_ocioracle_node;
 
 struct rlm_sql_ocioracle_conn {
     OCI_Connection  *conn;
@@ -46,15 +46,20 @@ struct rlm_sql_ocioracle_conn {
     // for procedure that return cursor
     OCI_Statement   *cursorHandle;
 
-    char            **results;
-    int             id;
-    int             in_use;
-    struct timeval  tv;
+    // Talloc context used for data result.
+    TALLOC_CTX      *ctx;
 
-    int              pos;
-    unsigned int     affected_rows;
-    rlm_sql_ocioracle_list *rows;
-    rlm_sql_ocioracle_node *curr_row;
+    /// Rows array pointer used to store result
+    /// of the query.
+    /// Contains an array of pointer to a row data.
+    /// Every row data contains an array of pointer
+    /// to column data (string)
+    char            ***rows;
+    int             num_fetched_rows;
+    unsigned int    num_columns;
+
+    int             pos;
+    int             affected_rows;
 };
 
 

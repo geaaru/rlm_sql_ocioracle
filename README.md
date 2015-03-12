@@ -2,6 +2,8 @@ Oracle alternative module for FreeRADIUS
 ========================================
 
 This module allow you to use PL/SQL function that return a cursor.
+Instead of use directly OCI oracle library I use OCILIB library for
+communication with database.
 
 How it works ?
 ---------------
@@ -14,6 +16,13 @@ authorize_check_query = "begin :Ret_Cursor := pkRadius.authorize_check_query('%{
 
 Install (Freeradius 2.2.x)
 --------------------------
+
+For freeradius-2.2.x use tagged version 0.1.0.
+Note: Freeradius-2.2.x module will not be supported in near future.
+
+
+Install (Freeradius 3.x)
+------------------------
 
 * Check if present oracle-instantclient-basic
 * Check if present ocilib library (http://orclib.sourceforge.net)
@@ -29,7 +38,13 @@ Install (Freeradius 2.2.x)
 * Edit files under sql/ocioracle/*.conf files
 * Run radiusd
 
+Thanks
+------
+
+My special thanks to Vincent Rogier, creator of OCILIB library (http://orclib.sourceforge.net).
+
 Credits
 -------
 
 Geaaru
+

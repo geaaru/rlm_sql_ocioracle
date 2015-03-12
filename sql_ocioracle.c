@@ -15,9 +15,9 @@
  *   along with this program; if not, write to the Free Software
  *   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  *
- *   Copyright 2011  Ge@@ru <geaaru@gmail.com>
+ *   Copyright 2015  Geaaru <geaaru@gmail.com>
  */
-RCSID("$Id$")
+// RCSID("$Id$")
 
 #include <freeradius-devel/radiusd.h>
 #include <freeradius-devel/rad_assert.h>
@@ -26,9 +26,6 @@ RCSID("$Id$")
 
 #include "rlm_sql.h"
 #include "sql_ocioracle.h"
-#include "sql_ocioracle_row.h"
-#include "sql_ocioracle_field.h"
-#include "list.h"
 
 static short ocilib_not_initialized = 1;
 
@@ -37,73 +34,181 @@ static int
 sql_release_statement(rlm_sql_ocioracle_conn_t *);
 
 static int
-sql_reconnect(SQLSOCK *, rlm_sql_ocioracle_sock *, SQL_CONFIG *);
+sql_reconnect(rlm_sql_handle_t *, rlm_sql_ocioracle_conn_t *,
+              rlm_sql_config_t *);
+
+static char *
+sql_ocioracle_get_column_data(const void *, OCI_Column *, OCI_Resultset *);
+
+static int
+sql_ocioracle_set_row2array(rlm_sql_ocioracle_conn_t *, char **, int);
+
+static int
+sql_num_fields(rlm_sql_handle_t *, rlm_sql_config_t *);
 
 
 /**
- * Callback used by OCIOracle library
+ * @return NULL on error or if field of the column is null.
+ * @return a pointer to allocated string from input context
+ */
+static char *
+sql_ocioracle_get_column_data(const void *ctx, OCI_Column *col,
+                              OCI_Resultset *rs)
+{
+   char *ans = NULL;
+   const char *string = NULL;
+   unsigned int type = 0;
+   unsigned int index = 0;
+
+   if (!ctx || !col || !rs) return ans;
+
+   type = OCI_ColumnGetType(col);
+   index = OCI_GetColumnIndex(rs, OCI_ColumnGetName(col));
+
+   if (OCI_IsNull(rs, index))
+      // No data to store
+      return ans;
+
+   switch (type) {
+      case OCI_CDT_TEXT: // dtext *
+         string = OCI_GetString(rs, index);
+         if (string) {
+            ans = talloc_asprintf(ctx, "%s", string);
+            if (!ans) {
+               SQL_OCI_WARN("Error on allocate memory for string %s", string);
+            }
+         }
+         break;
+      case OCI_CDT_NUMERIC: // short, int, long long, double
+         // Temporary handle all number as int.
+
+         ans = talloc_asprintf(ctx, "%d", OCI_GetInt(rs, index));
+         if (!ans) {
+            SQL_OCI_WARN("Error on allocate memory for string %s", string);
+         }
+         break;
+      case OCI_CDT_DATETIME: // OCI_Date
+         // For now convert date to string
+      case OCI_CDT_TIMESTAMP: // OCI_Timestamp *
+      case OCI_CDT_LONG: // OCI_Long *
+      case OCI_CDT_LOB: // OCI_Lob
+      case OCI_CDT_FILE: // OCI_File *
+      case OCI_CDT_CURSOR: // OCI_Statement *
+      case OCI_CDT_INTERVAL: // OCI_Interval *
+      case OCI_CDT_RAW: // void *
+      case OCI_CDT_OBJECT: // OCI_Object *
+      case OCI_CDT_COLLECTION: // OCI_Coll *
+      case OCI_CDT_REF: // OCI_Ref *
+      default:
+         SQL_OCI_ERROR("type of column %s (%d) not permitted",
+                       (char *) OCI_ColumnGetName(col),
+                       type);
+         break;
+   } // end switch
+
+   return ans;
+}
+
+/**
+ * Assign row_data point to rows vector.
+ * If size of the row array is less of target position
+ * then a new array is created.
+ *
+ * @return 0 on success
+ * @return 1 on error
+ */
+static int
+sql_ocioracle_set_row2array(rlm_sql_ocioracle_conn_t *conn,
+                            char **row_data,
+                            int pos)
+{
+   int ans = 0, arr_size = 0, i = 0;
+   char ***nrows = NULL;
+
+   if (!conn || !row_data || pos < 0)
+      return 1;
+
+   arr_size = (int) (talloc_array_length(conn->rows) / sizeof(char **));
+
+   if (pos >= arr_size) {
+
+      nrows = talloc_zero_array(conn->ctx, char **, arr_size * 2);
+      if (!nrows) {
+         SQL_OCI_ERROR("Error on allocate a new rows array.");
+         return 1;
+      }
+
+      for (i = 0; i < arr_size; i++)
+         nrows[i] = conn->rows[i];
+
+      talloc_free(conn->rows);
+
+      nrows[i] = row_data;
+      conn->rows = nrows;
+
+   } else
+      conn->rows[pos] = row_data;
+
+   return ans;
+}
+
+/**
+ * Callback used by OCIOracle library on handle error on connections.
  */
 static void
-sql_error_handler_cb(OCI_Error *error) {
+sql_error_handler_cb(OCI_Error *error)
+{
+   OCI_Connection *c = NULL;
+   rlm_sql_handle_t *handle = NULL;
+   rlm_sql_ocioracle_conn_t *conn = NULL;
+   OCI_Statement *st = NULL;
 
-  OCI_Connection *c = NULL;
-  rlm_sql_handle_t *handle = NULL;
-  rlm_sql_ocioracle_conn_t *conn = NULL;
-  OCI_Statement *st = NULL;
+   if (!error) return;
 
-  if (!error) return;
+   c = OCI_ErrorGetConnection(error);
+   st = OCI_ErrorGetStatement(error);
 
-  c = OCI_ErrorGetConnection(error);
-  st = OCI_ErrorGetStatement(error);
+   if (c) {
 
-  if (c) {
+      handle = (rlm_sql_handle_t *) OCI_GetUserData(c);
 
-    handle = (rlm_sql_handle_t *) OCI_GetUserData(c);
+      if (handle) {
 
-    if (handle) {
+         conn = (rlm_sql_ocioracle_conn_t *) handle->conn;
 
-      conn = (rlm_sql_ocioracle_conn_t *) handle->conn;
+         if (conn) {
+            conn->errHandle = error;
+            conn->errCode = OCI_ErrorGetOCICode(error) ?
+               OCI_ErrorGetOCICode(error) : OCI_ErrorGetInternalCode(error);
 
-      if (conn) {
-        conn->errHandle = error;
-        conn->errCode = OCI_ErrorGetOCICode(error) ?
-          OCI_ErrorGetOCICode(error) : OCI_ErrorGetInternalCode(error);
+         }
+
+         SQL_OCI_ERROR("Error to connection %s%s:\nOCICODE = %d\n%s",
+               (st ? "for query " : ""), (st ? OCI_GetSql(st) : ""),
+               conn->errCode, OCI_ErrorGetString(error));
+
+
+      } else {
+
+         SQL_OCI_ERROR("Error to unknown sql_socket %s%s:\nOCICODE = %d\n%s",
+               (st ? "for query " : ""),
+               (st ? OCI_GetSql(st) : ""),
+               (OCI_ErrorGetOCICode(error) ? OCI_ErrorGetOCICode(error) :
+                (OCI_ErrorGetInternalCode(error) ? OCI_ErrorGetInternalCode(error) : 0)),
+               OCI_ErrorGetString(error));
+
 
       }
 
-      ERROR("rlm_sql_ocioracle: Error to connection %d %s%s:\n"
-          "OCICODE = %d\n%s",
-          sqlsocket->id,
-          (st ? "for query " : ""),
-          (st ? OCI_GetSql(st) : ""),
-          conn->errCode,
-          OCI_ErrorGetString(error));
+   } else {
 
+      SQL_OCI_ERROR("Error to unknown connection %s%s:\nOCICODE = %d\n%s",
+            (st ? "for query " : ""), (st ? OCI_GetSql(st) : ""),
+            (OCI_ErrorGetOCICode(error) ? OCI_ErrorGetOCICode(error) :
+             (OCI_ErrorGetInternalCode(error) ? OCI_ErrorGetInternalCode(error) : 0)),
+            OCI_ErrorGetString(error));
 
-    } else {
-
-      ERROR("rlm_sql_ocioracle: Error to unknown sql_socket %s%s:\n"
-          "OCICODE = %d\n%s",
-          (st ? "for query " : ""),
-          (st ? OCI_GetSql(st) : ""),
-          (OCI_ErrorGetOCICode(error) ? OCI_ErrorGetOCICode(error) :
-           (OCI_ErrorGetInternalCode(error) ? OCI_ErrorGetInternalCode(error) : 0)),
-          OCI_ErrorGetString(error));
-
-
-    }
-
-  } else {
-
-    ERROR("rlm_sql_ocioracle: Error to unknown connection %s%s:\n"
-        "OCICODE = %d\n%s",
-        (st ? "for query " : ""),
-        (st ? OCI_GetSql(st) : ""),
-        (OCI_ErrorGetOCICode(error) ? OCI_ErrorGetOCICode(error) :
-         (OCI_ErrorGetInternalCode(error) ? OCI_ErrorGetInternalCode(error) : 0)),
-        OCI_ErrorGetString(error));
-
-  }
+   }
 
 }
 
@@ -123,14 +228,14 @@ mod_instantiate (CONF_SECTION *conf, rlm_sql_config_t *config)
       if (!OCI_Initialize(sql_error_handler_cb, NULL,
                OCI_ENV_THREADED | OCI_ENV_CONTEXT)) {
 
-         ERROR("rlm_sql_ocioracle: Couldn't init Oracle OCI Lib environment (OCI_Initialize())");
+         SQL_OCI_ERROR("Couldn't init Oracle OCI Lib environment (OCI_Initialize())");
          return -1;
       }
 
       ocilib_not_initialized = 0;
    }
 
-   INFO("rlm_sql_ocioracle: OCI Lib correctly initialized.")
+   SQL_OCI_INFO("OCI Lib correctly initialized.");
 
    return 0;
 }
@@ -141,10 +246,6 @@ mod_instantiate (CONF_SECTION *conf, rlm_sql_config_t *config)
 static int
 sql_release_statement(rlm_sql_ocioracle_conn_t *conn)
 {
-   int i;
-   rlm_sql_ocioracle_node *n = NULL;
-   rlm_sql_ocioracle_row *r = NULL;
-
    if (conn) {
 
       if (conn->cursorHandle) {
@@ -163,44 +264,16 @@ sql_release_statement(rlm_sql_ocioracle_conn_t *conn)
          conn->queryHandle = NULL;
       }
 
-      if (conn->results) {
-         r = (rlm_sql_ocioracle_row *)
-            rlm_sql_ocioracle_node_get_data(conn->curr_row);
-         for (i = 0; r && i < rlm_sql_ocioracle_row_get_colnum(r); i++) {
+      // Free all memory allocations related with
+      // query result.
+      talloc_free_children(conn->ctx);
 
-            if (conn->results[i]) {
-               free(conn->results[i]);
-               conn->results[i] = NULL;
-            }
-
-         } // end for i
-
-         free(conn->results);
-         conn->results = NULL;
-      }
-
-      conn->curr_row = NULL;
+      conn->rows = NULL;
+      conn->num_fetched_rows = 0;
       conn->pos = -1;
       conn->affected_rows = -1;
+      conn->num_columns = 0;
 
-      if (conn->rows) {
-         for (i = 0, n = rlm_sql_ocioracle_list_get_first(conn->rows);
-               i < rlm_sql_ocioracle_list_get_size(conn->rows) && n;
-               i++, n = rlm_sql_ocioracle_node_get_next(n), r = NULL) {
-
-            r = (rlm_sql_ocioracle_row *)
-               rlm_sql_ocioracle_node_get_data(n);
-
-            if (r) {
-               rlm_sql_ocioracle_row_destroy(r);
-               rlm_sql_ocioracle_node_set_data(n, NULL);
-            }
-
-         } // end for i
-
-         rlm_sql_ocioracle_list_destroy(conn->rows);
-         conn->rows = NULL;
-      }
    }
 
    return 0;
@@ -230,56 +303,52 @@ _sql_socket_destructor(rlm_sql_ocioracle_conn_t *conn)
  * @return RLM_SQL_ERROR on error
  * @return RLM_SQL_OK on success
  */
-static sql_rcode_t
+   static sql_rcode_t
 sql_socket_init(rlm_sql_handle_t *handle, rlm_sql_config_t *config)
 {
-    const char *err = NULL;
-    OCI_Error *errHandle = NULL;
-    rlm_sql_ocioracle_conn_t *conn = NULL;
+   rlm_sql_ocioracle_conn_t *conn = NULL;
 
-    // Allocate object
-    MEM(conn = handle->conn = talloc_zero(handle, rlm_sql_ocioracle_conn_t));
-    talloc_set_destructor(conn, _sql_socket_destructor);
+   // Allocate object
+   MEM(conn = handle->conn = talloc_zero(handle, rlm_sql_ocioracle_conn_t));
+   talloc_set_destructor(conn, _sql_socket_destructor);
 
-    conn->rows = NULL;
-    conn->curr_row = NULL;
-    conn->pos = -1;
-    conn->rs = NULL;
-    conn->cursorHandle = NULL;
-    conn->queryHandle = NULL;
-    conn->errHandle = NULL;
-    conn->results = NULL;
-    conn->errCode = 0;
-    conn->affected_rows = -1;
+   conn->ctx = talloc_new(conn);
+   if (!conn->ctx) {
+      SQL_OCI_ERROR("Error on allocate socket internal talloc context.");
+      return RLM_SQL_ERROR;
+   }
 
-    INFO("rlm_sql_ocioracle: I try to connect to service name %s", config->sql_db);
+   conn->pos = -1;
+   conn->affected_rows = -1;
 
-    // Connect to database
-    conn->conn = OCI_ConnectionCreate(config->sql_db,
-                                      config->sql_login,
-                                      config->sql_password,
-                                      OCI_SESSION_DEFAULT);
-    if (!conn->conn) {
-        ERROR("rlm_sql_ocioracle: Oracle connection failed: '%s'",
-              (conn->errHandle ? OCI_ErrorGetString(conn->errHandle) :
-               "Error description not available"));
+   SQL_OCI_INFO("I try to connect to service name %s", config->sql_db);
 
-        return RLM_SQL_ERROR;
-    }
+   // Connect to database
+   conn->conn = OCI_ConnectionCreate(config->sql_db,
+                                     config->sql_login,
+                                     config->sql_password,
+                                     OCI_SESSION_DEFAULT);
+   if (!conn->conn) {
+      SQL_OCI_ERROR("Oracle connection failed: '%s'",
+            (conn->errHandle ? OCI_ErrorGetString(conn->errHandle) :
+             "Error description not available"));
 
-    // Set UserData to rlm_sql_handle_t object
-    OCI_SetUserData(conn->conn, handle);
+      return RLM_SQL_ERROR;
+   }
 
-    // Disable autocommit
-    if (!OCI_SetAutoCommit(conn->conn, 0)) {
-       ERROR("rlm_sql_ocioracle: Error on disable autommit '%s'",
-              (conn->errHandle ? OCI_ErrorGetString(conn->errHandle) :
-               "Error description not available"));
-       return RLM_SQL_ERROR;
-    }
+   // Set UserData to rlm_sql_handle_t object
+   OCI_SetUserData(conn->conn, handle);
+
+   // Disable autocommit
+   if (!OCI_SetAutoCommit(conn->conn, 0)) {
+      SQL_OCI_ERROR("Error on disable autommit '%s'",
+            (conn->errHandle ? OCI_ErrorGetString(conn->errHandle) :
+             "Error description not available"));
+      return RLM_SQL_ERROR;
+   }
 
 
-    return 0;
+   return 0;
 }
 
 /**
@@ -308,12 +377,11 @@ sql_error(TALLOC_CTX *ctx, sql_log_entry_t out[], size_t outlen,
    if (conn && conn->errCode) {
       if (conn->errHandle)
          error = talloc_asprintf(ctx, "OCICODE = %d, %s", conn->errCode,
-                                 OCI_ErrorGetString(conn->errCode));
+               OCI_ErrorGetString(conn->errHandle));
       else
          error = talloc_asprintf(ctx, "OCICODE = %d", conn->errCode);
-   } else {
+   } else
       error = talloc_asprintf(ctx, "rlm_sql_ocioracle: no connection to db");
-   }
 
    out[0].type = L_ERR;
    out[0].msg = error;
@@ -337,11 +405,11 @@ sql_check_error(rlm_sql_handle_t *handle, rlm_sql_config_t *config)
    conn = (rlm_sql_ocioracle_conn_t *) handle->conn;
 
    if (conn &&
-       (conn->errCode == 3113 || conn->errCode == 3114)) {
-      ERROR("rlm_sql_ocioracle: OCI_SERVER_NOT_CONNECTED");
+         (conn->errCode == 3113 || conn->errCode == 3114)) {
+      SQL_OCI_ERROR("OCI_SERVER_NOT_CONNECTED");
       ans = RLM_SQL_RECONNECT;
    } else {
-      ERROR("rlm_sql_ocioracle: OCI_SERVER_NORMAL");
+      SQL_OCI_ERROR("OCI_SERVER_NORMAL");
    }
 
    return ans;
@@ -357,83 +425,82 @@ sql_check_error(rlm_sql_handle_t *handle, rlm_sql_config_t *config)
  * @return RLM_SQL_OK on success
  */
 static sql_rcode_t
-sql_query(rlm_sql_handle_t *handle, rlm_sql_config_t *config, char *querystr)
+sql_query(rlm_sql_handle_t *handle, rlm_sql_config_t *config, const char *querystr)
 {
-    char plsqlCursorQuery = 0;
-    int res = 0;
-    unsigned int affected_rows = 0;
-    rlm_sql_ocioracle_conn_t *conn = NULL;
+   char plsqlCursorQuery = 0;
+   int res = 0;
+   unsigned int affected_rows = 0;
+   rlm_sql_ocioracle_conn_t *conn = NULL;
 
-    conn = (rlm_sql_ocioracle_conn_t *) (handle ? handle->conn : NULL);
-    if (!conn) {
-       ERROR("rlm_sql_ocioracle: unexpected invalid socket object");
-       return RLM_SQL_RECONNECT;
-    }
+   conn = (rlm_sql_ocioracle_conn_t *) (handle ? handle->conn : NULL);
+   if (!conn) {
+      SQL_OCI_ERROR("unexpected invalid socket object");
+      return RLM_SQL_RECONNECT;
+   }
 
-    /*if (config->sqltrace) DEBUG(querystr);*/
-    sql_release_statement(conn);
+   /*if (config->sqltrace) DEBUG(querystr);*/
+   sql_release_statement(conn);
 
-    if (!conn->conn || !OCI_Ping(conn->conn)) {
+   if (!conn->conn || !OCI_Ping(conn->conn)) {
 
-       // Try to reconnecto to database
-       if (sql_reconnect(handle, conn, config))
-          return RLM_SQL_RECONNECT;
-    }
+      // Try to reconnecto to database
+      if (sql_reconnect(handle, conn, config))
+         return RLM_SQL_RECONNECT;
+   }
 
-    // Check if it is a procedure with a returned cursor
-    plsqlCursorQuery = (strstr(querystr, RLM_SQL_OCIORACLE_CURSOR_PROCEDURE_STR) ? 1 : 0);
+   // Check if it is a procedure with a returned cursor
+   plsqlCursorQuery = (strstr(querystr, RLM_SQL_OCIORACLE_CURSOR_PROCEDURE_STR) ? 1 : 0);
 
-    conn->queryHandle = OCI_StatementCreate(conn->conn);
-    if (plsqlCursorQuery)
-        conn->cursorHandle = OCI_StatementCreate(conn->conn);
+   conn->queryHandle = OCI_StatementCreate(conn->conn);
+   if (plsqlCursorQuery)
+      conn->cursorHandle = OCI_StatementCreate(conn->conn);
 
-    if (!conn->queryHandle || (plsqlCursorQuery && !conn->cursorHandle)) {
-       ERROR("rlm_sql_ocioracle: create OCI_Statement in sql_query: %s", querystr);
-       goto error;
-    }
+   if (!conn->queryHandle || (plsqlCursorQuery && !conn->cursorHandle)) {
+      SQL_OCI_ERROR("Error on create OCI_Statement in sql_query: %s", querystr);
+      goto error;
+   }
 
-    // Prepare Statement
-    if (!OCI_Prepare(conn->queryHandle, querystr)) {
-       ERROR("rlm_sql_ocioracle: prepare failed in sql_query for query %s",
-              querystr);
-       goto error;
-    }
+   // Prepare Statement
+   if (!OCI_Prepare(conn->queryHandle, querystr)) {
+      SQL_OCI_ERROR("Error on prepare failed in sql_query for query %s", querystr);
+      goto error;
+   }
 
-    // Bind Cursor returned statement
-    if (plsqlCursorQuery && !OCI_BindStatement(conn->queryHandle,
-                                               MT(RLM_SQL_OCIORACLE_CURSOR_PROCEDURE_STR),
-                                               conn->cursorHandle)) {
-       ERROR("rlm_sql_ocioracle: bind return cursor statetement.");
-       goto error;
-    }
+   // Bind Cursor returned statement
+   if (plsqlCursorQuery && !OCI_BindStatement(conn->queryHandle,
+                                              MT(RLM_SQL_OCIORACLE_CURSOR_PROCEDURE_STR),
+                                              conn->cursorHandle)) {
+      SQL_OCI_ERROR("Error on bind return cursor statetement.");
+      goto error;
+   }
 
-    res = OCI_Execute(conn->queryHandle);
+   res = OCI_Execute(conn->queryHandle);
 
-    conn->rs = (plsqlCursorQuery ?
-                OCI_GetResultset(conn->cursorHandle) :
-                OCI_GetResultset(conn->queryHandle));
+   conn->rs = (plsqlCursorQuery ?
+               OCI_GetResultset(conn->cursorHandle) :
+               OCI_GetResultset(conn->queryHandle));
 
-    if (!res || (plsqlCursorQuery && !conn->rs)) {
-       ERROR("rlm_sql_ocioracle: execute query failed in sql_query: %s", querystr);
-       //return sql_check_error(sqlsocket, config);
-       conn->affected_rows = -1;
+   if (!res || (plsqlCursorQuery && !conn->rs)) {
+      SQL_OCI_ERROR("Error on execute query failed in sql_query: %s", querystr);
+      //return sql_check_error(sqlsocket, config);
+      conn->affected_rows = -1;
 
-    } else {
+   } else {
 
-       affected_rows = OCI_GetAffectedRows(conn->queryHandle);
-       conn->affected_rows = affected_rows;
-       DEBUG("rlm_sql_ocioracle: Affected rows %u", conn->affected_rows);
+      affected_rows = OCI_GetAffectedRows(conn->queryHandle);
+      conn->affected_rows = affected_rows;
+      SQL_OCI_DEBUG("Affected rows %u", conn->affected_rows);
 
-    }
+   }
 
-    // Commit
-    OCI_Commit(conn->conn);
+   // Commit
+   OCI_Commit(conn->conn);
 
-    return RLM_SQL_OK;
+   return RLM_SQL_OK;
 
 error:
 
-    return sql_check_error(handle, config);
+   return sql_check_error(handle, config);
 }
 
 /**
@@ -444,28 +511,26 @@ error:
  * @return RLM_SQL_OK on success
  */
 static sql_rcode_t
-sql_select_query(rlm_sql_handle_t *handle, rlm_sql_config_t *config, char *querystr)
+sql_select_query(rlm_sql_handle_t *handle, rlm_sql_config_t *config, const char *querystr)
 {
    OCI_Column *col = NULL;
    rlm_sql_ocioracle_conn_t *conn = NULL;
-   rlm_sql_ocioracle_row *r = NULL;
-   rlm_sql_ocioracle_field *f = NULL;
+   char **row_data = NULL;
    char plsqlCursorQuery = 0;
    int res = 0, colnum = 0, i, y;
 
    conn = (rlm_sql_ocioracle_conn_t *) (handle ? handle->conn : NULL);
    if (!conn) {
-      ERROR("rlm_sql_ocioracle: unexpected invalid socket object");
+      SQL_OCI_ERROR("unexpected invalid socket object");
       return RLM_SQL_RECONNECT;
    }
 
-   /*if (config->sqltrace) DEBUG(querystr);*/
    sql_release_statement(conn);
 
    if (!conn->conn || !OCI_Ping(conn->conn)) {
-       // Try to reconnecto to database
-       if (sql_reconnect(handle, conn, config))
-          return RLM_SQL_RECONNECT;
+      // Try to reconnecto to database
+      if (sql_reconnect(handle, conn, config))
+         return RLM_SQL_RECONNECT;
    }
 
    plsqlCursorQuery = (strstr(querystr, RLM_SQL_OCIORACLE_CURSOR_PROCEDURE_STR) ? 1 : 0);
@@ -480,7 +545,7 @@ sql_select_query(rlm_sql_handle_t *handle, rlm_sql_config_t *config, char *query
 
    // Prepare Statement
    if (!OCI_Prepare(conn->queryHandle, querystr)) {
-      ERROR("rlm_sql_ocioracle: prepare failed in sql_query for query %s",
+      SQL_OCI_ERROR("prepare failed in sql_query for query %s",
             querystr);
       goto error;
    }
@@ -489,91 +554,68 @@ sql_select_query(rlm_sql_handle_t *handle, rlm_sql_config_t *config, char *query
    if (plsqlCursorQuery && !OCI_BindStatement(conn->queryHandle,
                                               MT(RLM_SQL_OCIORACLE_CURSOR_PROCEDURE_STR),
                                               conn->cursorHandle)) {
-      ERROR("rlm_sql_ocioracle: bind return cursor statetement.");
+      SQL_OCI_ERROR("bind return cursor statetement.");
       goto error;
    }
 
    res = OCI_Execute(conn->queryHandle);
 
    conn->rs = (plsqlCursorQuery ?
-         OCI_GetResultset(conn->cursorHandle) :
-         OCI_GetResultset(conn->queryHandle));
+               OCI_GetResultset(conn->cursorHandle) :
+               OCI_GetResultset(conn->queryHandle));
 
    if (!res || (plsqlCursorQuery && !conn->rs)) {
       return sql_check_error(handle, config);
    }
 
-   /*
-    * Define where the output from fetch calls will go
-    *
-    * This is a gross hack, but it works - we convert
-    * all data to strings for ease of use.  Fortunately, most
-    * of the data we deal with is already in string format.
-    */
    colnum = sql_num_fields(handle, config);
-   if (!colnum) {
-      ERROR("rlm_sql_ocioracle: query failed in sql_select_query: %s",
-            querystr);
+   if (colnum <= 0) {
+      SQL_OCI_ERROR("query failed in sql_select_query: %s", querystr);
       goto error;
    }
 
-   // Create rows list
-   conn->rows = rlm_sql_ocioracle_list_create(conn);
+   // Create rows pointer array
+   conn->rows = talloc_zero_array(conn->ctx, char **,
+                                  SQL_OCI_INITIAL_ROWS_SIZE);
    if (!conn->rows) {
-      ERROR("rlm_sql_ocioracle: error on create list");
+      SQL_OCI_ERROR("error on create row array");
       goto error;
    }
 
-   for (i = 0; OCI_FetchNext(conn->rs); i++, r = NULL) {
+   for (i = 0; OCI_FetchNext(conn->rs); i++, row_data = NULL) {
 
-      // Create row object
-      r = rlm_sql_ocioracle_row_create(colnum, i, conn->rows);
-      if (!r) {
-         ERROR("rlm_sql_ocioracle: error on create row object");
+      conn->num_fetched_rows++;
+
+      // Note: I use same father talloc ctx. I haven't time
+      // to change parent of already allocated chunks.
+      row_data = talloc_zero_array(conn->ctx, char *, colnum);
+      if (!row_data) {
+         SQL_OCI_ERROR("Error on allocate memory for row data");
          goto error;
       }
 
-      for (y = 1; y <= colnum; y++, col = NULL, f = NULL) {
+      if (sql_ocioracle_set_row2array(conn, row_data, i)) {
+         SQL_OCI_ERROR("error on assign row pointer at position %d", i);
+      }
+
+      for (y = 1; y <= colnum; y++, col = NULL) {
 
          col = OCI_GetColumn(conn->rs, y);
          if (!col) {
-            ERROR("rlm_sql_ocioracle: error on column at pos %d (row %d)", y, i);
+            SQL_OCI_ERROR("error on column at pos %d (row %d)", y, i);
             goto error;
          }
 
-         f = rlm_sql_ocioracle_field_create(r);
-         if (!f) {
-            ERROR("rlm_sql_ocioracle: error on create field at pos %d (row %d)",
-                  y, i);
-            goto error;
-         }
-
-         if (rlm_sql_ocioracle_field_store_data(f, col, conn->rs)) {
-            ERROR("rlm_sql_ocioracle: error on store data field at pos %d (row %d)",
-                  y, i);
-            goto error;
-         }
-
-         if (rlm_sql_ocioracle_row_set_field(r, f, y - 1)) {
-            ERROR("rlm_sql_ocioracle: error on set field on row at pos %d (row %d)",
-                  y, i);
-            goto error;
-         }
+         row_data[y-1] = sql_ocioracle_get_column_data((const void *) row_data,
+                                                       col, conn->rs);
 
       } // end for y
-
-      // Add row to list
-      if (rlm_sql_ocioracle_list_add_node_data(conn->rows, r)) {
-         ERROR("rlm_sql_ocioracle: error on add row to list at pos %d", i);
-         goto error;
-      }
 
    } // end for i
 
    conn->pos = 0;
-   conn->curr_row = rlm_sql_ocioracle_list_get_first(conn->rows);
 
-   return 0;
+   return RLM_SQL_OK;
 
 error:
 
@@ -588,27 +630,26 @@ error:
 static int
 sql_num_fields(rlm_sql_handle_t *handle, rlm_sql_config_t *config)
 {
-   int count = -1;
+   int ans = -1;
    rlm_sql_ocioracle_conn_t *conn = (handle ? handle->conn : NULL);
-   rlm_sql_ocioracle_row *r = NULL;
 
    if (!conn) return -1;
 
    /* get the number of columns in the select list */
-    if (conn->curr_row) {
-        r = (rlm_sql_ocioracle_row *) rlm_sql_ocioracle_node_get_data(conn->curr_row);
-        count = rlm_sql_ocioracle_row_get_colnum(r);
+    if (conn->num_columns) {
+       ans = conn->num_columns;
     } else if (conn->rs) {
-        count = OCI_GetColumnCount(conn->rs);
-        if (!count) {
-            ERROR("rlm_sql_ocioracle: Error retrieving column count in sql_num_fields: %s",
-                  (conn->errHandle ? OCI_ErrorGetString(conn->errHandle) :
-                   "Unexpected error."));
-            count = -1;
-        }
+       ans = OCI_GetColumnCount(conn->rs);
+       if (!ans) {
+          SQL_OCI_ERROR("Error retrieving column count in sql_num_fields: %s",
+                        (conn->errHandle ? OCI_ErrorGetString(conn->errHandle) :
+                                           "Unexpected error."));
+          ans = -1;
+       }
+       conn->num_columns = ans;
     }
 
-    return count;
+    return ans;
 }
 
 /**
@@ -621,7 +662,7 @@ sql_num_rows(rlm_sql_handle_t *handle, rlm_sql_config_t *config)
 
    conn = (rlm_sql_ocioracle_conn_t *) (handle ?  handle->conn : NULL);
 
-   return (conn && conn->rows ? rlm_sql_ocioracle_list_get_size(conn->rows) : 0);
+   return (conn ? conn->num_fetched_rows : 0);
 }
 
 /**
@@ -645,7 +686,7 @@ sql_affected_rows(rlm_sql_handle_t *handle, rlm_sql_config_t *config)
 
    conn = (rlm_sql_ocioracle_conn_t *) (handle ?  handle->conn : NULL);
 
-   DEBUG("rlm_sql_ocioracle: Affected rows %u", conn->affected_rows);
+   SQL_OCI_DEBUG("Affected rows %u", conn->affected_rows);
 
    return (int) conn->affected_rows;
 }
@@ -659,18 +700,17 @@ sql_affected_rows(rlm_sql_handle_t *handle, rlm_sql_config_t *config)
 static sql_rcode_t
 sql_fetch_row (rlm_sql_handle_t *handle, rlm_sql_config_t *config)
 {
-   int ans = RLM_SQL_OK, i;
-   rlm_sql_ocioracle_row *r = NULL;
+   int ans = RLM_SQL_OK;
    rlm_sql_ocioracle_conn_t *conn = NULL;
 
    conn = (rlm_sql_ocioracle_conn_t *) (handle ?  handle->conn : NULL);
    if (!conn) {
-      ERROR("rlm_sql_ocioracle: unexpected invalid socket object");
+      SQL_OCI_ERROR("unexpected invalid socket object");
       return RLM_SQL_RECONNECT;
    }
 
    if (!conn->conn || !OCI_Ping(conn->conn)) {
-      ERROR("rlm_sql_ocioracle: Socket not connected");
+      SQL_OCI_ERROR("Socket not connected");
       return RLM_SQL_RECONNECT;
    }
 
@@ -678,34 +718,11 @@ sql_fetch_row (rlm_sql_handle_t *handle, rlm_sql_config_t *config)
 
    handle->row = NULL;
 
-   r = (rlm_sql_ocioracle_row *) rlm_sql_ocioracle_node_get_data(conn->curr_row);
+   if (conn->pos < conn->num_fetched_rows) {
+      handle->row = conn->rows[conn->pos];
+   }
 
-   if (conn->results) { // Fetch local next rows
-
-      // Free results
-      for (i = 0; r && i < rlm_sql_ocioracle_row_get_colnum(r); i++) {
-
-         if (conn->results[i]) {
-            free(conn->results[i]);
-            conn->results[i] = NULL;
-         }
-
-      } // end for i
-
-      free(conn->results);
-      conn->results = NULL;
-
-      conn->curr_row = rlm_sql_ocioracle_node_get_next(conn->curr_row);
-      r = (rlm_sql_ocioracle_row *) rlm_sql_ocioracle_node_get_data(conn->curr_row);
-
-   } // else Fetch currect row: first call of this functio
-
-   if (r) {
-      rlm_sql_ocioracle_row_dump(r, &conn->results);
-      handle->row = conn->results;
-   } else
-      // No other fetch data
-      ans = RLM_SQL_ERROR; // TODO: check if is correct set -1
+   conn->pos++;
 
    return ans;
 }
@@ -721,7 +738,6 @@ sql_free_result(rlm_sql_handle_t *handle, rlm_sql_config_t *config)
 
    return RLM_SQL_OK;
 }
-
 
 /**
  * Function called at end of the query for update/insert. Nothing to do in my case.
@@ -756,7 +772,7 @@ sql_reconnect (rlm_sql_handle_t *handle,
                rlm_sql_config_t *config)
 {
    // Try to reconnect to database
-   INFO("rlm_sql_ocioracle: Found an expired connection. I try to reconnect to database");
+   SQL_OCI_INFO("Found an expired connection. I try to reconnect to database");
 
    if (!conn || !config)
       return 1;
@@ -773,8 +789,7 @@ sql_reconnect (rlm_sql_handle_t *handle,
                                      OCI_SESSION_DEFAULT);
 
    if (!conn->conn) {
-      ERROR("rlm_sql_ocioracle: Oracle connection failed on socket %d",
-            sqlsocket->id);
+      SQL_OCI_ERROR("Oracle connection failed on socket.");
       return 1;
    }
 
@@ -783,8 +798,7 @@ sql_reconnect (rlm_sql_handle_t *handle,
 
    // Disable autocommit
    if (!OCI_SetAutoCommit(conn->conn, 0)) {
-      ERROR("rlm_sql_ocioracle: Error on disable autommit on socket %d",
-            sqlsocket->id);
+      SQL_OCI_ERROR("Error on disable autommit on socket.");
       return 1;
    }
 
