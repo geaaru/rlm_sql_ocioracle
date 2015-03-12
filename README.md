@@ -18,6 +18,7 @@ Install (Freeradius 2.2.x)
 --------------------------
 
 For freeradius-2.2.x use tagged version 0.1.0.
+
 Note: Freeradius-2.2.x module will not be supported in near future.
 
 
