@@ -36,7 +36,8 @@ Install (Freeradius 3.x)
 * configure your tnsnames.ora file
 * export TNS_ADMIN variable to directory path of your tnsnames.ora file.
 * Edit your freeradius configuration to enable sql module and rlm_sql_ocioracle module
-* Edit files under sql/ocioracle/*.conf files
+* Create files under mods-config/sql/main/ocioracle/queries.conf (You can use same file
+  of the oracle module).
 * Run radiusd
 
 Thanks
