@@ -84,6 +84,10 @@ for version in $oracle_version ; do
 
   LDFLAGS="-L${OCILIB_PATH} -lnnz${version} -L${OCILIB_PATH} -locci -L${OCILIB_PATH} -lclntsh"
 
+  # Avoid caching of result and permit check
+  # of the same library for every oracle version.
+  unset ac_cv_lib_clntsh__OCIInitialize_
+
   AC_CHECK_LIB(clntsh, [ OCIInitialize ],
                ocilib_present=1,
                ocilib_present=0)

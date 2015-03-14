@@ -729,7 +729,7 @@ sql_fetch_row (rlm_sql_handle_t *handle, rlm_sql_config_t *config)
 
 /**
  * Free memory allocated for a result set.
- * @return RLM_SQL_OK on succes
+ * @return RLM_SQL_OK always
  */
 static sql_rcode_t
 sql_free_result(rlm_sql_handle_t *handle, rlm_sql_config_t *config)
@@ -741,6 +741,7 @@ sql_free_result(rlm_sql_handle_t *handle, rlm_sql_config_t *config)
 
 /**
  * Function called at end of the query for update/insert. Nothing to do in my case.
+ * @return RLM_SQL_OK on succes
  */
 static sql_rcode_t
 sql_finish_query(rlm_sql_handle_t *handle, rlm_sql_config_t *config)
@@ -750,6 +751,7 @@ sql_finish_query(rlm_sql_handle_t *handle, rlm_sql_config_t *config)
 
 /**
  * Function called at end of select query. Nothing to do in my case.
+ * @return RLM_SQL_OK always
  */
 static sql_rcode_t
 sql_finish_select_query(rlm_sql_handle_t *handle, rlm_sql_config_t *config)
