@@ -128,7 +128,7 @@ sql_ocioracle_set_row2array(rlm_sql_ocioracle_conn_t *conn,
    if (!conn || !row_data || pos < 0)
       return 1;
 
-   arr_size = (int) (talloc_array_length(conn->rows) / sizeof(char **));
+   arr_size = (int) talloc_array_length(conn->rows);
 
    if (pos >= arr_size) {
 
