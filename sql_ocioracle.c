@@ -15,7 +15,7 @@
  *   along with this program; if not, write to the Free Software
  *   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  *
- *   Copyright 2015  Geaaru <geaaru@gmail.com>
+ *   Copyright 2017  Geaaru <geaaru@gmail.com>
  */
 // RCSID("$Id$")
 
@@ -347,8 +347,7 @@ sql_socket_init(rlm_sql_handle_t *handle, rlm_sql_config_t *config)
       return RLM_SQL_ERROR;
    }
 
-
-   return 0;
+   return RLM_SQL_OK;
 }
 
 /**
@@ -666,17 +665,6 @@ sql_num_rows(rlm_sql_handle_t *handle, rlm_sql_config_t *config)
 }
 
 /**
- * Database specific store_result function. Returns a result
- * set for the query. Not needed for Oracle.
- */
-static sql_rcode_t
-sql_store_result(rlm_sql_handle_t *handle, rlm_sql_config_t *config)
-{
-   /* Not needed for Oracle */
-   return RLM_SQL_OK;
-}
-
-/**
  * Return number of rows affected by the query (update or insert).
  */
 static int
@@ -718,11 +706,14 @@ sql_fetch_row (rlm_sql_handle_t *handle, rlm_sql_config_t *config)
 
    handle->row = NULL;
 
-   if (conn->pos < conn->num_fetched_rows) {
-      handle->row = conn->rows[conn->pos];
-   }
+   if (conn->num_fetched_rows) {
+      if (conn->pos < conn->num_fetched_rows) {
+         handle->row = conn->rows[conn->pos];
+      }
 
-   conn->pos++;
+      conn->pos++;
+   } else
+      ans = RLM_SQL_NO_MORE_ROWS;
 
    return ans;
 }
@@ -815,7 +806,6 @@ rlm_sql_module_t rlm_sql_ocioracle = {
    .sql_socket_init         = sql_socket_init,
    .sql_query               = sql_query,
    .sql_select_query        = sql_select_query,
-   .sql_store_result        = sql_store_result,
    .sql_num_fields          = sql_num_fields,
    .sql_num_rows            = sql_num_rows,
    .sql_affected_rows       = sql_affected_rows,
