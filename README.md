@@ -5,6 +5,13 @@ This module allow you to use PL/SQL function that return a cursor.
 Instead of use directly OCI oracle library I use OCILIB library for
 communication with database.
 
+---
+**NOTE**
+
+This driver is tested with FreeRadius 3.0.x branch. Branches 3.2 and 4.0 are not validated.
+
+---
+
 How it works ?
 ---------------
 
@@ -20,7 +27,6 @@ Install (Freeradius 2.2.x)
 For freeradius-2.2.x use tagged version 0.1.0.
 
 Note: Freeradius-2.2.x module will not be supported in near future.
-
 
 Install (Freeradius 3.x)
 ------------------------
