@@ -101,7 +101,7 @@ sql_ocioracle_get_column_data(const void *ctx, OCI_Column *col,
       case OCI_CDT_REF: // OCI_Ref *
       default:
          SQL_OCI_ERROR("type of column %s (%d) not permitted",
-                       (char *) OCI_ColumnGetName(col),
+                       (const char *) OCI_ColumnGetName(col),
                        type);
          break;
    } // end switch
@@ -219,7 +219,7 @@ sql_error_handler_cb(OCI_Error *error)
  * @return -1 on error
  */
 static int
-mod_instantiate (CONF_SECTION *conf, rlm_sql_config_t *config)
+mod_instantiate (UNUSED CONF_SECTION *conf, UNUSED rlm_sql_config_t *config)
 
 {
    // Initialize library
@@ -365,7 +365,7 @@ sql_socket_init(rlm_sql_handle_t *handle, rlm_sql_config_t *config)
  */
 static size_t
 sql_error(TALLOC_CTX *ctx, sql_log_entry_t out[], size_t outlen,
-          rlm_sql_handle_t *handle, rlm_sql_config_t *config)
+          rlm_sql_handle_t *handle, UNUSED rlm_sql_config_t *config)
 {
    const char *error;
    rlm_sql_ocioracle_conn_t *conn = NULL;
@@ -396,7 +396,7 @@ sql_error(TALLOC_CTX *ctx, sql_log_entry_t out[], size_t outlen,
  * @return an action for rlm_sql to take.
  */
 static int
-sql_check_error(rlm_sql_handle_t *handle, rlm_sql_config_t *config)
+sql_check_error(rlm_sql_handle_t *handle, UNUSED rlm_sql_config_t *config)
 {
    int ans = -1;
    rlm_sql_ocioracle_conn_t *conn = NULL;
@@ -627,7 +627,7 @@ error:
  * or other.
  */
 static int
-sql_num_fields(rlm_sql_handle_t *handle, rlm_sql_config_t *config)
+sql_num_fields(rlm_sql_handle_t *handle, UNUSED rlm_sql_config_t *config)
 {
    int ans = -1;
    rlm_sql_ocioracle_conn_t *conn = (handle ? handle->conn : NULL);
@@ -655,7 +655,7 @@ sql_num_fields(rlm_sql_handle_t *handle, rlm_sql_config_t *config)
  * Return number of rows in query.
  */
 static int
-sql_num_rows(rlm_sql_handle_t *handle, rlm_sql_config_t *config)
+sql_num_rows(rlm_sql_handle_t *handle, UNUSED rlm_sql_config_t *config)
 {
    rlm_sql_ocioracle_conn_t *conn = NULL;
 
@@ -668,7 +668,7 @@ sql_num_rows(rlm_sql_handle_t *handle, rlm_sql_config_t *config)
  * Return number of rows affected by the query (update or insert).
  */
 static int
-sql_affected_rows(rlm_sql_handle_t *handle, rlm_sql_config_t *config)
+sql_affected_rows(rlm_sql_handle_t *handle, UNUSED rlm_sql_config_t *config)
 {
    rlm_sql_ocioracle_conn_t *conn = NULL;
 
@@ -686,7 +686,7 @@ sql_affected_rows(rlm_sql_handle_t *handle, rlm_sql_config_t *config)
  * @return RLM_SQL_OK on success
  */
 static sql_rcode_t
-sql_fetch_row (rlm_sql_handle_t *handle, rlm_sql_config_t *config)
+sql_fetch_row (rlm_sql_handle_t *handle, UNUSED rlm_sql_config_t *config)
 {
    int ans = RLM_SQL_OK;
    rlm_sql_ocioracle_conn_t *conn = NULL;
@@ -723,7 +723,7 @@ sql_fetch_row (rlm_sql_handle_t *handle, rlm_sql_config_t *config)
  * @return RLM_SQL_OK always
  */
 static sql_rcode_t
-sql_free_result(rlm_sql_handle_t *handle, rlm_sql_config_t *config)
+sql_free_result(rlm_sql_handle_t *handle, UNUSED rlm_sql_config_t *config)
 {
    sql_release_statement(handle ? handle->conn : NULL);
 
@@ -735,7 +735,7 @@ sql_free_result(rlm_sql_handle_t *handle, rlm_sql_config_t *config)
  * @return RLM_SQL_OK on succes
  */
 static sql_rcode_t
-sql_finish_query(rlm_sql_handle_t *handle, rlm_sql_config_t *config)
+sql_finish_query(UNUSED rlm_sql_handle_t *handle, UNUSED rlm_sql_config_t *config)
 {
    return RLM_SQL_OK;
 }
@@ -745,7 +745,7 @@ sql_finish_query(rlm_sql_handle_t *handle, rlm_sql_config_t *config)
  * @return RLM_SQL_OK always
  */
 static sql_rcode_t
-sql_finish_select_query(rlm_sql_handle_t *handle, rlm_sql_config_t *config)
+sql_finish_select_query(rlm_sql_handle_t *handle, UNUSED rlm_sql_config_t *config)
 {
    sql_release_statement(handle ? handle->conn : NULL);
 
