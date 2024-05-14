@@ -1,24 +1,20 @@
 # Author: geaaru
 
-AC_INIT(sql_ocioracle.c)
+AC_INIT
+AC_CONFIG_SRCDIR([sql_ocioracle.c])
 AC_REVISION($Revision: 1.10 $)
 AC_DEFUN(modname,[rlm_sql_ocioracle])
 
-AC_ARG_WITH(oracle_lib_dir, [AC_HELP_STRING([--with-oracle-lib-dir],
-                                    [Path of the Oracle OCI libraries])],
+AC_ARG_WITH(oracle_lib_dir, [AS_HELP_STRING([--with-oracle-lib-dir],[Path of the Oracle OCI libraries])],
             [ oracle_lib_dir="$withval" ], [ oracle_lib_dir="" ])
-AC_ARG_WITH(oracle_include_dir, [AC_HELP_STRING([--with-oracle-include-dir],
-                                    [Path of the Oracle OCI includes])],
+AC_ARG_WITH(oracle_include_dir, [AS_HELP_STRING([--with-oracle-include-dir],[Path of the Oracle OCI includes])],
             [ oracle_include_dir="$withval" ], [ oracle_include_dir="" ])
-AC_ARG_WITH(ocilib_lib_dir, [AC_HELP_STRING([--with-ocilib-lib-dir],
-                                      [Path of the opensource ocilib library])],
+AC_ARG_WITH(ocilib_lib_dir, [AS_HELP_STRING([--with-ocilib-lib-dir],[Path of the opensource ocilib library])],
             [ ocilib_lib_dir="$withval" ], [ ocilib_lib_dir="" ])
-AC_ARG_WITH(ocilib_include_dir, [AC_HELP_STRING([--with-ocilib-include-dir],
-                                      [path of the opensource ocilib library includes])],
+AC_ARG_WITH(ocilib_include_dir, [AS_HELP_STRING([--with-ocilib-include-dir],[path of the opensource ocilib library includes])],
             [ ocilib_include_dir="$withval" ], [ ocilib_include_dir="" ])
-AC_ARG_WITH(oracle_version, [AC_HELP_STRING([--with-oracle-version],
-                                            [Version of Oracle libraries. Possible values are 9,10,11 or 12])],
-            [oracle_version="$withval" ], [ oracle_version="9 10 11 12" ])
+AC_ARG_WITH(oracle_version, [AS_HELP_STRING([--with-oracle-version],[Version of Oracle libraries. Possible values are 9,10,11,12 or 19])],
+            [oracle_version="$withval" ], [ oracle_version="9 10 11 12 19" ])
 
 fail=
 sql_ocioracle_ldflags=
@@ -35,7 +31,7 @@ CFLAGS_PRE="$CFLAGS"
 if test x$oracle_include_dir != x ; then
   OCI_INCLUDES="-I$oracle_include_dir"
 else
-  if text x"$ORACLE_HOME" != "x" ; then
+  if test x"$ORACLE_HOME" != "x" ; then
     OCI_INCLUDES="-I${ORACLE_HOME}/include"
   fi
 fi
@@ -75,7 +71,7 @@ OCILIB_PATH=""
 if test x$oracle_lib_dir != x ; then
   OCILIB_PATH="$oracle_lib_dir"
 else
-  if text x"$ORACLE_HOME" != "x" ; then
+  if test x"$ORACLE_HOME" != "x" ; then
     OCILIB_PATH="${ORACLE_HOME}/lib"
   fi
 fi
@@ -151,4 +147,5 @@ fi
 AC_SUBST(sql_ocioracle_ldflags)
 AC_SUBST(sql_ocioracle_cflags)
 AC_SUBST(targetname)
-AC_OUTPUT(all.mk)
+AC_CONFIG_FILES([all.mk])
+AC_OUTPUT
